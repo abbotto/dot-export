@@ -1,0 +1,17 @@
+# Ignore everything
+*
+
+# Descend into directories
+!*/**
+
+!.editorconfig
+!.gitattributes
+!.gitignore
+!.travis.yml
+!dot-export
+!LICENSE
+!package.json
+!README.md
+
+!**/ops
+!**/test

@@ -1,0 +1,60 @@
+#!/usr/bin/env sh
+
+set -eu
+
+. ./test/util/expect-value.sh
+. ./test/util/terminate.sh
+. ./dot-export
+
+printf '\n%s\n' "> Export variables with the 'dot-export' function"
+
+exit_code=0
+multi_line_encoded="multi\\nline\\nstring"
+
+multi_line_single_quote='multi
+line
+string?q=abc123'
+
+multi_line_double_quote="multi
+line
+string?q=abc123"
+
+# Do not overwrite previously exported variables
+dot-export \
+    -p ./test/env \
+    -f require/require.env \
+    -f default/default.env \
+    -f dot-export.env.00 \
+    -f dot-export.env.01
+
+expect_value 'ENV_VAR' 'FOO1'
+expect_value 'ENV_VAR_COMMAND' 'FOO7'
+expect_value 'ENV_VAR_DQ_WRAP' 'FOO3'
+expect_value 'ENV_VAR_DQ_WRAP_JSON_ESCAPE_NESTED_SQ' "{\'foo\':\'bar\'}"
+expect_value 'ENV_VAR_DQ_WRAP_JSON_NESTED_DQ' '{foo:bar}'
+expect_value 'ENV_VAR_DQ_WRAP_MULTI_LINE' "${multi_line_double_quote}"
+expect_value 'ENV_VAR_DQ_WRAP_NESTED_SQ' "'foo5'"
+expect_value 'ENV_VAR_EMPTY' ''
+expect_value 'ENV_VAR_ENCODED' 'foo\sbar'
+expect_value 'ENV_VAR_ENCODED_MULTI_LINE' "${multi_line_encoded}"
+expect_value 'ENV_VAR_SQ_WRAP' 'FOO4'
+expect_value 'ENV_VAR_SQ_WRAP_JSON_ESCAPE_NESTED_DQ' '{\"foo\":\"bar\"}'
+expect_value 'ENV_VAR_SQ_WRAP_JSON_NESTED_SQ' '{foo:bar}'
+expect_value 'ENV_VAR_SQ_WRAP_MULTI_LINE' "${multi_line_single_quote}"
+expect_value 'ENV_VAR_SQ_WRAP_NESTED_DQ' '"foo6"'
+expect_value 'ENV_VAR_TRIM_WHITESPACE' 'foo8'
+expect_value 'ENV_VAR_WITH_EQUALS' 'foo2=qwerty'
+
+# Overwrite previously exported variables
+dot-export -o -f ./test/env/dot-export.env.01
+
+expect_value 'ENV_VAR' 'foo1'
+expect_value 'ENV_VAR_COMMAND' 'foo7'
+expect_value 'ENV_VAR_DQ_WRAP' 'foo3'
+expect_value 'ENV_VAR_SQ_WRAP' 'foo4'
+
+printf '%s\n' "> ${pass_count:-0} passed, ${fail_count:-0} failed"
+
+[ "${fail_count}" -gt 0 ] && exit_code=1
+
+terminate "${exit_code}" "PASS" "FAIL"

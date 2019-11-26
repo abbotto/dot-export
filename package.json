@@ -1,0 +1,29 @@
+{
+  "name": "dot-export",
+  "version": "0.0.1",
+  "description": "Export environment variables in the current process",
+  "main": "dot-export",
+  "directories": {
+    "doc": "doc",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "./test/util/run.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/abbotto/dot-export.git"
+  },
+  "keywords": [
+    "dot",
+    "environment-variable",
+    "export",
+    "shell"
+  ],
+  "author": "Jared Abbott",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/abbotto/dot-export/issues"
+  },
+  "homepage": "https://github.com/abbotto/dot-export#readme"
+}

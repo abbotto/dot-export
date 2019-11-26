@@ -1,0 +1,234 @@
+#!/usr/bin/env sh
+
+#--------------------------------------------------------------------------------
+# DOT EXPORT
+#--------------------------------------------------------------------------------
+# Export environment variables in the current process
+#--------------------------------------------------------------------------------
+
+dot_export(){
+    #--------------------------------------------------------------------------------
+    # Enable safety checks
+    #--------------------------------------------------------------------------------
+    throw_non_zero_exit_status=0
+    throw_undefined_variable=0
+
+    # '-e' instructs the shell to exit if a command has a non-zero exit status
+    # '-u' throws an error if an undefined variable is referenced
+    [ "${-#*e}" != "$-" ] && set -e || throw_non_zero_exit_status=1
+    [ "${-#*u}" != "$-" ] && set -u || throw_undefined_variable=1
+
+	tmp_env_file=$(mktemp)
+	tmp_process_env_file=$(mktemp)
+    
+    module_env_file=''
+    module_env_name='module.env'
+    cache_ifs="${IFS:-}"
+    clean_file_list=''
+    command_list=''
+    default_env_file=''
+    default_env_name='default.env'
+    dirty_file_list=''
+    overwrite_flag=''
+    require_env_file=''
+    require_env_name='require.env'
+
+    for arg in "${@}"; do
+        # [ -o | --overwrite ]
+        if [ "${arg}" = '-o' ] || [ "${arg}" = '--overwrite' ]; then
+            overwrite_flag=true
+        fi
+
+        # [ -c | --command ]
+        if [ -n "${command_flag:-}" ]; then
+            command_flag=''
+            command_list="${command_list},${arg}"
+        fi
+
+        if [ "${arg}" = '-c' ] || [ "${arg}" = '--command' ]; then
+            command_flag=true
+        fi
+
+        # [ -f | --file ]
+        if [ -n "${env_file_flag:-}" ]; then
+            env_file_flag=''
+            dirty_file_list="${dirty_file_list},${arg}"
+        fi
+
+        if [ "${arg}" = '-f' ] || [ "${arg}" = '--file' ]; then
+            env_file_flag=true
+        fi
+
+        # [ -p | --path ]
+        if [ -n "${dot_export_path_flag:-}" ] && [ -z "${dot_export_path:-}" ]; then
+            dot_export_path_flag=''
+            dot_export_path="${arg}"
+        fi
+
+        if [ "${arg}" = '-p' ] || [ "${arg}" = '--path' ]; then
+            dot_export_path_flag=true
+        fi
+    done
+
+    if [ -z "${dot_export_path}" ]; then
+        dot_export_path="${DOT_EXPORT_PATH:-"."}"
+    fi
+
+	# Overwrite previously exported variables
+    if [ -n "${overwrite_flag}" ] ; then
+        eval "rm -rf ${tmp_process_env_file}"        
+        tmp_process_env_file=''
+    fi
+
+	# Refine the list of env files
+    IFS=","; for env_file in ${dirty_file_list#?}; do
+        if [ ! -f "${env_file}" ]; then
+            if [ -f "${dot_export_path}/${env_file}" ]; then
+                env_file="${dot_export_path}/${env_file}"
+            else
+                printf '%s\n' "> Warning: File not found: '${env_file}'"
+            fi
+        fi
+
+        if [ -z "${env_file##*$require_env_name*}" ] && [ -z "${require_env_file}" ]; then
+            require_env_file="${env_file}"
+        elif [ -z "${env_file##*$default_env_name*}" ] && [ -z "${default_env_file}" ]; then
+            default_env_file="${env_file}"
+        elif [ -z "${env_file##*$module_env_name*}" ] && [ -z "${module_env_file}" ]; then
+            module_env_file="${env_file}"
+        else
+            clean_file_list="${clean_file_list},${env_file}"
+        fi
+    done; IFS="${cache_ifs}"
+
+    # Add the default environment file to the end of the list
+    if [ -f "${default_env_file}" ]; then
+        if [ -z "${clean_file_list}" ]; then
+            clean_file_list="${default_env_file}"
+        else
+            clean_file_list="${clean_file_list#?},${default_env_file}"
+        fi
+    elif [ -n "${clean_file_list}" ]; then
+        clean_file_list=${clean_file_list#?}
+    fi
+    
+    # Export the vaules from the env files
+    IFS=","; for env_file in ${clean_file_list}; do
+        IFS="${cache_ifs}"
+
+        # Cache existing exported vars in a file so they can be preserved
+        # Calling 'set' in POSIX mode returns a list of shell variables
+        # https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html
+        [ -f "${tmp_process_env_file}" ] && set > "${tmp_process_env_file}"
+
+        # Remove leading whitespace from unquoted values
+        if [ -f "${env_file}" ]; then
+            # shellcheck disable=SC2002
+            cat "${env_file}" | \
+            sed 's|\(=\s\+\)[^A-Za-z0-9_]\+|=|g' | \
+            tee "${tmp_env_file}" >/dev/null 2>&1
+        fi
+
+        set -a
+            # Export variables to the process environment
+            [ -f "${env_file}" ] && . "${tmp_env_file}"
+
+            # Restore previously exported variables that belong to the current process
+            [ -f "${tmp_process_env_file}" ] && . "${tmp_process_env_file}"
+        set +a
+
+        IFS=","
+	done; IFS="${cache_ifs}"
+
+    # Check if required variables are set
+    if [ -n "${require_env_file}" ]; then
+        var_is_set=$(mktemp)
+
+        cat "${require_env_file}" | sed -e '/^[ \t]*#/d' | while read -r require_var; do
+            set +eu
+                require_value=$(eval printf '%s\\n' "\$${require_var}")
+            set -eu
+
+            if [ -z "${require_value}" ]; then
+                rm -f "${var_is_set}"
+                printf '%s\n' "> Error: A required variable is not set: '${require_var}'"
+            fi
+        done
+
+        if [ ! -f "${var_is_set}" ]; then
+            exit 127
+        fi
+
+        rm -f "${var_is_set}"
+    fi
+
+    # Check if module variables are set
+    if [ -n "${module_env_file}" ]; then
+        tmp_module_env_js_file=$(mktemp)
+
+        #-------- Start building the JS file --------
+        printf '%s' 'export default {' | tee "${tmp_module_env_js_file}" >/dev/null 2>&1
+
+        #  Loop over the module variables
+        cat "${module_env_file}" | sed -e '/^[ \t]*#/d' | while read -r module_var; do
+            set +eu
+                module_value=$(eval printf '%s\\n' "\$${module_var}")
+            set -eu
+
+            if [ -z "${module_value}" ]; then
+                printf '%s\n' "> Warning: A module variable is not set: '${module_value}'"
+            fi
+
+            printf '%s' "\"${module_var}\":\"${module_value}\"," | \
+            tee -a "${tmp_module_env_js_file}" >/dev/null 2>&1
+        done
+
+        # Remove the last comma
+        cat "${tmp_module_env_js_file}" | \
+        sed '$ s|,$||g' | \
+        tee "${tmp_module_env_js_file}" >/dev/null 2>&1
+
+        printf '%s\n\n' '}' | tee -a "${tmp_module_env_js_file}" >/dev/null 2>&1
+        #-------- Stop building the JS file --------
+
+        mv "${tmp_module_env_js_file}" "${module_env_file}.js"
+    fi
+
+    # Run commands
+    if [ -n "${command_list}" ]; then
+        IFS=","; for cmd in ${command_list#?}; do
+            eval "${cmd}"
+        done; IFS="${cache_ifs}"
+    fi
+
+    #--------------------------------------------------------------------------------
+    # Restore shell settings and cleanup temporary files
+    #--------------------------------------------------------------------------------
+    rm -rf "${tmp_env_file}"
+	rm -rf "${tmp_process_env_file}"
+
+    if [ "${throw_non_zero_exit_status}" = 0 ] && [ "${-#*e}" = "$-" ]; then
+        set +e
+    fi
+
+    if [ "${throw_undefined_variable}" = 0 ] && [ "${-#*u}" = "$-" ]; then
+        set +u
+    fi
+}
+
+#--------------------------------------------------------------------------------
+# Run as a script
+#--------------------------------------------------------------------------------
+# /path/to/dot-export -<ARG>
+#--------------------------------------------------------------------------------
+if [ -n "${*}" ]; then
+    dot_export "${@}"
+fi
+
+#--------------------------------------------------------------------------------
+# Create an alias and expand it if necessary
+#--------------------------------------------------------------------------------
+shell_type=$(ps $$); [ -z "${shell_type##*'/bin/bash'*}" ] && \
+eval "shopt -s expand_aliases"
+
+alias dot-export="dot_export"

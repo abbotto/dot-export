@@ -1,0 +1,28 @@
+language: node_js
+
+notifications:
+  email: false
+
+node_js:
+  - "12"
+
+dist: trusty
+
+before_install:
+    - export scversion="stable"
+    - wget "https://storage.googleapis.com/shellcheck/shellcheck-${scversion}.linux.x86_64.tar.xz"
+    - tar --xz -xvf shellcheck-"${scversion}".linux.x86_64.tar.xz
+    - sudo cp shellcheck-"${scversion}"/shellcheck /usr/bin/
+    - shellcheck --version
+    - export ALLOW_EXTERNAL_SOURCE='-x '
+    - export CHROME_BIN=chromium-browser
+
+env:
+  - CXX=g++-4.8
+
+branches:
+  only:
+    - master
+
+script:
+  - npm test

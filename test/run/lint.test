@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+
+. ./test/util/terminate.sh
+
+ALLOW_EXTERNAL_SOURCE="${ALLOW_EXTERNAL_SOURCE:-}"
+
+printf '\n%s\n' "> Lint scripts with the 'shellcheck' tool"
+
+SHELLCHECK_OPTS="\
+-e SC1071 \
+-e SC1090 \
+-e SC1091 \
+-e SC2002 \
+-e SC2016 \
+-e SC2034 \
+-e SC2148 \
+-e SC2181 \
+-e SC2185"
+
+export SHELLCHECK_OPTS
+
+run_shellcheck="shellcheck ${ALLOW_EXTERNAL_SOURCE} ${SHELLCHECK_OPTS}"
+eval "find . -name '*.sh' -name '*.test' -type f -exec ${run_shellcheck} {} +" && \
+
+terminate "${?}" "PASS" "FAIL"
